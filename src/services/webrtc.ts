@@ -44,7 +44,16 @@ export class WebRTCService {
    */
   async initialize(id?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.peer = id ? new Peer(id) : new Peer();
+      const peerConfig = {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' },
+          ],
+        },
+      };
+
+      this.peer = id ? new Peer(id, peerConfig) : new Peer(peerConfig);
 
       this.peer.on('open', (assignedId) => {
         this._peerId = assignedId;
