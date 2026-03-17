@@ -101,7 +101,8 @@ export class FileTransferService {
           this.handleFileMeta(msg);
           break;
         case 'FILE_CHUNK':
-          // Should not happen — chunks come as binary preceded by header
+          // Keep track of the chunk header so the next binary packet can be assigned its chunkIndex.
+          this.pendingChunkHeader = msg;
           break;
         case 'FILE_COMPLETE':
           await this.handleFileComplete(msg);
