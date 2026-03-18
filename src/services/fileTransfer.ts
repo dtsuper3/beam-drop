@@ -9,7 +9,8 @@ export type MessageType =
   | 'FILE_META'
   | 'FILE_CHUNK'
   | 'FILE_COMPLETE'
-  | 'FILE_ACK';
+  | 'FILE_ACK'
+  | 'TRANSFER_CANCEL';
 
 export interface FileMetaMessage {
   type: 'FILE_META';
@@ -38,11 +39,17 @@ export interface FileAckMessage {
   chunkIndex: number;
 }
 
+export interface TransferCancelMessage {
+  type: 'TRANSFER_CANCEL';
+  fileId: string;
+}
+
 export type ProtocolMessage =
   | FileMetaMessage
   | FileChunkHeader
   | FileCompleteMessage
-  | FileAckMessage;
+  | FileAckMessage
+  | TransferCancelMessage;
 
 // --- Transfer State ---
 export type TransferDirection = 'upload' | 'download';
@@ -81,6 +88,7 @@ export class FileTransferService {
   // Active transfers
   private uploads: Map<string, UploadState> = new Map();
   private downloads: Map<string, DownloadState> = new Map();
+  private sendChain: Promise<void> = Promise.resolve();
 
   constructor(callbacks: FileTransferCallbacks) {
     this.callbacks = callbacks;
@@ -109,6 +117,9 @@ export class FileTransferService {
           break;
         case 'FILE_ACK':
           this.handleFileAck(msg);
+          break;
+        case 'TRANSFER_CANCEL':
+          this.handleTransferCancel(msg);
           break;
       }
     } else if (data instanceof ArrayBuffer) {
@@ -189,13 +200,30 @@ export class FileTransferService {
     upload.ackedChunks++;
   }
 
+  private handleTransferCancel(msg: TransferCancelMessage): void {
+    const download = this.downloads.get(msg.fileId);
+    if (download) {
+      this.emitTransferUpdate(download, 'download', 'cancelled');
+      this.downloads.delete(msg.fileId);
+    }
+  }
+
   /**
-   * Send one or more files through the data channel.
+   * Send one or more files through the data channel sequentially.
    */
   async sendFiles(files: File[]): Promise<void> {
-    for (const file of files) {
-      await this.sendFile(file);
-    }
+    const task = async () => {
+      for (const file of files) {
+        await this.sendFile(file);
+      }
+    };
+    
+    // Chain promises to prevent chunk interleaving from multiple concurrent calls
+    this.sendChain = this.sendChain.then(
+      task,
+      () => task() // If previous failed, still run new task
+    );
+    return this.sendChain;
   }
 
   private async sendFile(file: File): Promise<void> {
@@ -277,17 +305,27 @@ export class FileTransferService {
     const upload = this.uploads.get(fileId);
     if (upload) {
       upload.cancelled = true;
+      // Notify receiver to clean up resources
+      const cancelMsg: TransferCancelMessage = {
+        type: 'TRANSFER_CANCEL',
+        fileId,
+      };
+      if (this.channel && this.channel.open) {
+        this.channel.send(JSON.stringify(cancelMsg));
+      }
     }
   }
 
   private waitForBufferDrain(): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        if (
-          !this.channel ||
-          (this.channel.dataChannel && this.channel.dataChannel.bufferedAmount <= MAX_BUFFERED_AMOUNT) || 
-          (!this.channel.dataChannel) // Fallback if underlying channel isn't exposed
-        ) {
+        if (!this.channel || !this.channel.open) {
+          resolve(); // Channel closed
+          return;
+        }
+        
+        const dataChannel = this.channel.dataChannel as RTCDataChannel | undefined;
+        if (!dataChannel || dataChannel.bufferedAmount <= MAX_BUFFERED_AMOUNT) {
           resolve();
         } else {
           setTimeout(check, 50);
