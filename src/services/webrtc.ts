@@ -20,6 +20,7 @@ export class WebRTCService {
   private callbacks: WebRTCCallbacks;
   private _state: ConnectionState = 'idle';
   private _peerId: string | null = null;
+  private connectionTimeout: number | null = null;
 
   constructor(callbacks: WebRTCCallbacks) {
     this.callbacks = callbacks;
@@ -48,8 +49,12 @@ export class WebRTCService {
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' },
-            { urls: 'stun:stun.cloudflare.com:3478' },
+            // { urls: 'stun:stun.cloudflare.com:3478' },
           ],
         },
       };
@@ -72,10 +77,10 @@ export class WebRTCService {
       this.peer.on('connection', (conn) => {
         this.setupDataConnection(conn);
       });
-      
+
       this.peer.on('disconnected', () => {
         if (this._state === 'connected') {
-           this.setState('disconnected');
+          this.setState('disconnected');
         }
       });
     });
@@ -90,6 +95,16 @@ export class WebRTCService {
     }
 
     this.setState('connecting');
+
+    // Set a 10-second timeout for the connection
+    this.connectionTimeout = window.setTimeout(() => {
+      if (this._state !== 'connected') {
+        this.disconnect();
+        this.setState('failed');
+        this.callbacks.onError(new Error("Connection timed out. This is typically due to a strict network firewall or NAT. Please try a different Wi-Fi or cellular network."));
+      }
+    }, 10000);
+
     const conn = this.peer.connect(remoteId, {
       reliable: true,
       serialization: 'binary',
@@ -102,18 +117,28 @@ export class WebRTCService {
     this.dataConnection = conn;
 
     conn.on('open', () => {
+      this.clearConnectionTimeout();
       this.setState('connected');
       this.callbacks.onDataChannel(conn);
     });
 
     conn.on('close', () => {
+      this.clearConnectionTimeout();
       this.setState('disconnected');
       this.dataConnection = null;
     });
 
     conn.on('error', (err) => {
+      this.clearConnectionTimeout();
       this.callbacks.onError(err);
     });
+  }
+
+  private clearConnectionTimeout() {
+    if (this.connectionTimeout !== null) {
+      window.clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
   }
 
   getDataConnection(): DataConnection | null {
@@ -121,6 +146,7 @@ export class WebRTCService {
   }
 
   disconnect() {
+    this.clearConnectionTimeout();
     this.dataConnection?.close();
     this.peer?.destroy();
     this.dataConnection = null;
