@@ -54,7 +54,27 @@ export class WebRTCService {
             { urls: 'stun:stun3.l.google.com:19302' },
             { urls: 'stun:stun4.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' },
-            // { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            {
+              urls: "turn:global.relay.metered.ca:80",
+              username: "c033573ee7ecfb3cc5171e2c",
+              credential: "Sj9iCnihIOJtsSIQ",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80?transport=tcp",
+              username: "c033573ee7ecfb3cc5171e2c",
+              credential: "Sj9iCnihIOJtsSIQ",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:443",
+              username: "c033573ee7ecfb3cc5171e2c",
+              credential: "Sj9iCnihIOJtsSIQ",
+            },
+            {
+              urls: "turns:global.relay.metered.ca:443?transport=tcp",
+              username: "c033573ee7ecfb3cc5171e2c",
+              credential: "Sj9iCnihIOJtsSIQ",
+            },
           ],
         },
       };

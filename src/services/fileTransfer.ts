@@ -9,7 +9,6 @@ export type MessageType =
   | 'FILE_META'
   | 'FILE_CHUNK'
   | 'FILE_COMPLETE'
-  | 'FILE_ACK'
   | 'TRANSFER_CANCEL';
 
 export interface FileMetaMessage {
@@ -33,12 +32,6 @@ export interface FileCompleteMessage {
   fileId: string;
 }
 
-export interface FileAckMessage {
-  type: 'FILE_ACK';
-  fileId: string;
-  chunkIndex: number;
-}
-
 export interface TransferCancelMessage {
   type: 'TRANSFER_CANCEL';
   fileId: string;
@@ -48,7 +41,6 @@ export type ProtocolMessage =
   | FileMetaMessage
   | FileChunkHeader
   | FileCompleteMessage
-  | FileAckMessage
   | TransferCancelMessage;
 
 // --- Transfer State ---
@@ -115,9 +107,6 @@ export class FileTransferService {
         case 'FILE_COMPLETE':
           await this.handleFileComplete(msg);
           break;
-        case 'FILE_ACK':
-          this.handleFileAck(msg);
-          break;
         case 'TRANSFER_CANCEL':
           this.handleTransferCancel(msg);
           break;
@@ -167,14 +156,6 @@ export class FileTransferService {
         download.bytesReceived += data.byteLength;
 
         this.emitTransferUpdate(download, 'download', 'transferring');
-
-        // Send ACK
-        const ack: FileAckMessage = {
-          type: 'FILE_ACK',
-          fileId: header.fileId,
-          chunkIndex: header.chunkIndex,
-        };
-        this.channel?.send(JSON.stringify(ack));
       } catch (err) {
         this.callbacks.onError(
           new Error(`Failed receiving chunk ${header.chunkIndex}: ${err}`)
@@ -192,12 +173,6 @@ export class FileTransferService {
     this.emitTransferUpdate(download, 'download', 'completed');
     this.callbacks.onFileReceived(download.fileId, download.name, blob);
     this.downloads.delete(msg.fileId);
-  }
-
-  private handleFileAck(msg: FileAckMessage): void {
-    const upload = this.uploads.get(msg.fileId);
-    if (!upload) return;
-    upload.ackedChunks++;
   }
 
   private handleTransferCancel(msg: TransferCancelMessage): void {
@@ -241,7 +216,6 @@ export class FileTransferService {
       fileType: file.type || 'application/octet-stream',
       totalChunks,
       sentChunks: 0,
-      ackedChunks: 0,
       bytesSent: 0,
       startTime: Date.now(),
       cancelled: false,
@@ -378,7 +352,6 @@ interface UploadState {
   fileType: string;
   totalChunks: number;
   sentChunks: number;
-  ackedChunks: number;
   bytesSent: number;
   startTime: number;
   cancelled: boolean;
